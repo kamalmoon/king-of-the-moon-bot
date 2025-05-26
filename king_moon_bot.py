@@ -1,4 +1,3 @@
-
 import os
 import json
 from flask import Flask, request
@@ -32,6 +31,7 @@ def send_photo(chat_id, file_id, caption=None):
         data["caption"] = caption
     requests.post(API_URL + "sendPhoto", data=data)
 
+# Keyboards
 PAYMENT_KB = {
     "inline_keyboard": [
         [{"text": "Cash", "callback_data": "pm_cash"}],
@@ -90,11 +90,8 @@ LIQUOR_OPTIONS = {
 }
 
 def start_order(chat_id):
-    sessions[chat_id] = {
-        "order": [],
-        "total": 0,
-    }
-    send_message(chat_id, "Select a payment method:", PAYMENT_KB)
+    sessions[chat_id] = {"order": [], "total": 0}
+    send_message(chat_id, "Welcome! Upload your ID using /id and send your location with /location. Once verified, use /menu to start your order.")
 
 def send_menu(chat_id):
     send_message(chat_id, "Choose from the menu:", MENU_KB)
@@ -102,21 +99,26 @@ def send_menu(chat_id):
 def ask_need_anything(chat_id):
     send_message(chat_id, "Need anything else?", MORE_KB)
 
+def review_order(chat_id):
+    data = sessions.get(chat_id, {})
+    total = data.get("total", 0) + 10
+    lines = list(data.get("order", []))
+    lines.append("Delivery Fee $10")
+    summary = "\n".join(lines)
+    text = f"Order Summary:\n{summary}\nTotal: ${total}\nSelect a payment method:"
+    send_message(chat_id, text, PAYMENT_KB)
+
 def finalize_order(chat_id):
     data = sessions.get(chat_id, {})
     total = data.get("total", 0) + 10
-    lines = [*data.get("order", []), "Delivery Fee $10"]
+    lines = list(data.get("order", []))
+    lines.append("Delivery Fee $10")
+    summary = "\n".join(lines)
     payment = data.get("payment", "N/A")
     phone = data.get("phone", "N/A")
-    text = (
-        f"Order Summary:\n" + "\n".join(lines) +
-        f"\nTotal: ${total}\nPayment Method: {payment}\nPlease turn on notifications."
-    )
+    text = f"Order Summary:\n{summary}\nTotal: ${total}\nPayment Method: {payment}\nPlease turn on notifications."
     send_message(chat_id, text)
-    admin_text = (
-        f"User {chat_id}\nPayment: {payment}\nPhone: {phone}\n" + "\n".join(lines) +
-        f"\nTotal: ${total}"
-    )
+    admin_text = f"User {chat_id}\nPayment: {payment}\nPhone: {phone}\n{summary}\nTotal: ${total}"
     if ADMIN_CHAT_ID:
         send_message(ADMIN_CHAT_ID, admin_text)
         if data.get("id_file"):
@@ -124,8 +126,8 @@ def finalize_order(chat_id):
     sessions.pop(chat_id, None)
 
 def handle_photo(chat_id, message):
-    user = sessions.get(chat_id)
-    if not user or "payment" not in user or user.get("id_file"):
+    user = sessions.setdefault(chat_id, {"order": [], "total": 0})
+    if user.get("id_file"):
         return
     file_id = message["photo"][-1]["file_id"]
     user["id_file"] = file_id
@@ -135,37 +137,38 @@ def handle_photo(chat_id, message):
 
 def handle_location(chat_id, message):
     user = sessions.get(chat_id)
-    if not user or "payment" not in user or "id_file" not in user:
+    if not user or "id_file" not in user or user.get("location"):
         return
     user["location"] = message["location"]
-    send_menu(chat_id)
+    send_message(chat_id, "Great! Use /menu to start ordering.")
 
 def handle_text(chat_id, text):
-    user = sessions.setdefault(chat_id, {})
+    user = sessions.setdefault(chat_id, {"order": [], "total": 0})
     if text == "/start":
         start_order(chat_id)
         return
     if text == "/id":
-        if "payment" not in user:
-            send_message(chat_id, "Select a payment method first.")
-        elif "id_file" in user:
+        if "id_file" in user:
             send_message(chat_id, "ID already received.")
         else:
             send_message(chat_id, "Please send a photo of your ID.")
         return
     if text == "/location":
-        if "payment" not in user:
-            send_message(chat_id, "Select a payment method first.")
-        elif "id_file" not in user:
+        if "id_file" not in user:
             send_message(chat_id, "Upload your ID first using /id.")
         else:
             send_message(chat_id, "Share your live location from Telegram.")
+        return
+    if text == "/menu":
+        if "id_file" not in user or "location" not in user:
+            send_message(chat_id, "Upload your ID and send your location first.")
+        else:
+            send_menu(chat_id)
         return
     if user.get("waiting_for_phone"):
         user["phone"] = text
         user.pop("waiting_for_phone")
         ask_need_anything(chat_id)
-        return
 
 def handle_callback(callback):
     data = callback["data"]
@@ -181,7 +184,7 @@ def handle_callback(callback):
             "applepay": "Apple Pay",
             "xrp": "XRP",
         }.get(method, method)
-        send_message(chat_id, "Upload your ID with /id and send your location with /location.")
+        finalize_order(chat_id)
 
     elif data == "menu_cannabis":
         kb = {"inline_keyboard": [[{"text": v, "callback_data": f"c_strain_{k}"}] for k, v in CANNABIS_STRAINS.items()]}
@@ -239,7 +242,7 @@ def handle_callback(callback):
         send_menu(chat_id)
 
     elif data == "more_no":
-        finalize_order(chat_id)
+        review_order(chat_id)
 
 def handle_update(update):
     if "message" in update:
