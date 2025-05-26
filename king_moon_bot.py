@@ -1,8 +1,8 @@
+
 import os
 import json
 from flask import Flask, request
 import requests
-
 
 app = Flask(__name__)
 
@@ -10,18 +10,13 @@ TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")
 API_URL = f"https://api.telegram.org/bot{TOKEN}/"
 
-# in-memory storage for demo purposes
 sessions = {}
-
-
-# ----- helper functions -----
 
 def send_message(chat_id, text, keyboard=None):
     data = {"chat_id": chat_id, "text": text}
     if keyboard:
         data["reply_markup"] = json.dumps(keyboard)
     requests.post(API_URL + "sendMessage", data=data)
-
 
 def forward_message(chat_id, from_chat, message_id):
     data = {
@@ -31,15 +26,11 @@ def forward_message(chat_id, from_chat, message_id):
     }
     requests.post(API_URL + "forwardMessage", data=data)
 
-
 def send_photo(chat_id, file_id, caption=None):
     data = {"chat_id": chat_id, "photo": file_id}
     if caption:
         data["caption"] = caption
     requests.post(API_URL + "sendPhoto", data=data)
-
-
-# ----- keyboards -----
 
 PAYMENT_KB = {
     "inline_keyboard": [
@@ -98,9 +89,6 @@ LIQUOR_OPTIONS = {
     "req": ("Request something else", 0),
 }
 
-
-# ----- core handlers -----
-
 def start_order(chat_id):
     sessions[chat_id] = {
         "order": [],
@@ -108,42 +96,32 @@ def start_order(chat_id):
     }
     send_message(chat_id, "Select a payment method:", PAYMENT_KB)
 
-
 def send_menu(chat_id):
     send_message(chat_id, "Choose from the menu:", MENU_KB)
-
 
 def ask_need_anything(chat_id):
     send_message(chat_id, "Need anything else?", MORE_KB)
 
-
 def finalize_order(chat_id):
     data = sessions.get(chat_id, {})
-    total = data.get("total", 0) + 10  # delivery fee
-    lines = []
-    for item in data.get("order", []):
-        lines.append(item)
-    lines.append("Delivery Fee $10")
-    summary = "\n".join(lines)
+    total = data.get("total", 0) + 10
+    lines = [*data.get("order", []), "Delivery Fee $10"]
     payment = data.get("payment", "N/A")
     phone = data.get("phone", "N/A")
     text = (
-        f"Order Summary:\n{summary}\nTotal: ${total}\n"
-        f"Payment Method: {payment}\nPlease turn on notifications."
+        f"Order Summary:\n" + "\n".join(lines) +
+        f"\nTotal: ${total}\nPayment Method: {payment}\nPlease turn on notifications."
     )
     send_message(chat_id, text)
-
     admin_text = (
-        f"User {chat_id}\nPayment: {payment}\nPhone: {phone}\n{summary}\nTotal: ${total}"
+        f"User {chat_id}\nPayment: {payment}\nPhone: {phone}\n" + "\n".join(lines) +
+        f"\nTotal: ${total}"
     )
     if ADMIN_CHAT_ID:
         send_message(ADMIN_CHAT_ID, admin_text)
         if data.get("id_file"):
             send_photo(ADMIN_CHAT_ID, data["id_file"])
     sessions.pop(chat_id, None)
-
-
-# ----- message handlers -----
 
 def handle_photo(chat_id, message):
     user = sessions.get(chat_id)
@@ -155,7 +133,6 @@ def handle_photo(chat_id, message):
     if ADMIN_CHAT_ID:
         forward_message(ADMIN_CHAT_ID, chat_id, message["message_id"])
 
-
 def handle_location(chat_id, message):
     user = sessions.get(chat_id)
     if not user or "payment" not in user or "id_file" not in user:
@@ -163,13 +140,11 @@ def handle_location(chat_id, message):
     user["location"] = message["location"]
     send_menu(chat_id)
 
-
 def handle_text(chat_id, text):
     user = sessions.setdefault(chat_id, {})
     if text == "/start":
         start_order(chat_id)
         return
-
     if text == "/id":
         if "payment" not in user:
             send_message(chat_id, "Select a payment method first.")
@@ -178,7 +153,6 @@ def handle_text(chat_id, text):
         else:
             send_message(chat_id, "Please send a photo of your ID.")
         return
-
     if text == "/location":
         if "payment" not in user:
             send_message(chat_id, "Select a payment method first.")
@@ -187,15 +161,11 @@ def handle_text(chat_id, text):
         else:
             send_message(chat_id, "Share your live location from Telegram.")
         return
-
     if user.get("waiting_for_phone"):
         user["phone"] = text
         user.pop("waiting_for_phone")
         ask_need_anything(chat_id)
         return
-
-
-# ----- callback handlers -----
 
 def handle_callback(callback):
     data = callback["data"]
@@ -251,11 +221,7 @@ def handle_callback(callback):
         ask_need_anything(chat_id)
 
     elif data == "menu_liquor":
-        kb = {
-            "inline_keyboard": [
-                [{"text": f"{v[0]} ${v[1]}", "callback_data": f"l_{k}"}] for k, v in LIQUOR_OPTIONS.items()
-            ]
-        }
+        kb = {"inline_keyboard": [[{"text": f"{v[0]} ${v[1]}", "callback_data": f"l_{k}"}] for k, v in LIQUOR_OPTIONS.items()]}
         send_message(chat_id, "Choose liquor option:", kb)
 
     elif data.startswith("l_"):
@@ -275,9 +241,6 @@ def handle_callback(callback):
     elif data == "more_no":
         finalize_order(chat_id)
 
-
-# ----- update dispatcher -----
-
 def handle_update(update):
     if "message" in update:
         msg = update["message"]
@@ -291,11 +254,9 @@ def handle_update(update):
     elif "callback_query" in update:
         handle_callback(update["callback_query"])
 
-
 @app.route("/", methods=["GET"])
 def index():
     return "Bot is running"
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -303,6 +264,5 @@ def webhook():
     handle_update(update)
     return "ok"
 
-
 if __name__ == "__main__":
-
+    app.run(host="0.0.0.0", port=5000)
