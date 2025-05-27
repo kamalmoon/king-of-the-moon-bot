@@ -143,8 +143,10 @@ def handle_location(chat_id, message):
     send_message(chat_id, "Great! Use /menu to start ordering.")
 
 def handle_text(chat_id, text):
+    print(f"Received text from {chat_id}: {text}")  # ✅ Log added here
     user = sessions.setdefault(chat_id, {"order": [], "total": 0})
     if text == "/start":
+        print(f"/start detected from {chat_id}")  # ✅ Log added here
         start_order(chat_id)
         return
     if text == "/id":
@@ -248,6 +250,7 @@ def handle_update(update):
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
+        print(f"Message received from {chat_id}")  # ✅ Add here too
         if "photo" in msg:
             handle_photo(chat_id, msg)
         elif "location" in msg:
