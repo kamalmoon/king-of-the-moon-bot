@@ -17,30 +17,20 @@ def send_message(chat_id, text, keyboard=None):
         data["reply_markup"] = json.dumps(keyboard)
     requests.post(API_URL + "sendMessage", data=data)
 
-def forward_message(chat_id, from_chat, message_id):
-    data = {
-        "chat_id": chat_id,
-        "from_chat_id": from_chat,
-        "message_id": message_id,
-    }
-    requests.post(API_URL + "forwardMessage", data=data)
-
-def send_photo(chat_id, file_id, caption=None):
-    data = {"chat_id": chat_id, "photo": file_id}
-    if caption:
-        data["caption"] = caption
-    requests.post(API_URL + "sendPhoto", data=data)
-
 @app.route("/", methods=["GET"])
 def index():
     return "Bot is running"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = request.get_json(force=True)
-    print("📥 Webhook called")
-    print(json.dumps(update, indent=2))  # Debug print full incoming data
-    handle_update(update)
+    try:
+        update = request.get_json(force=True)
+        print("📥 RAW WEBHOOK DATA:")
+        print(json.dumps(update, indent=2))
+        handle_update(update)
+    except Exception as e:
+        print("❌ ERROR IN WEBHOOK:")
+        print(str(e))
     return "ok"
 
 def handle_update(update):
@@ -54,21 +44,18 @@ def handle_update(update):
             print(f"💬 Text: {text}")
             handle_text(chat_id, text)
         elif "photo" in msg:
-            print("📸 Photo received")
-            # handle_photo(chat_id, msg)
+            print("📸 Photo received (not handled yet)")
         elif "location" in msg:
-            print("📍 Location received")
-            # handle_location(chat_id, msg)
+            print("📍 Location received (not handled yet)")
 
     elif "callback_query" in update:
-        print("🔘 Callback received")
-        # handle_callback(update["callback_query"])
+        print("🔘 Callback query received (not handled yet)")
 
 def handle_text(chat_id, text):
     if text == "/start":
-        print(f"✅ /start detected from {chat_id}")
+        print(f"✅ /start triggered for {chat_id}")
         sessions[chat_id] = {"order": [], "total": 0}
-        send_message(chat_id, "✅ Welcome! Upload your ID with /id and send your location with /location. Use /menu to start your order.")
+        send_message(chat_id, "✅ Welcome! Upload your ID with /id and send your location with /location. Then use /menu to start your order.")
     elif text == "/id":
         send_message(chat_id, "📸 Please upload a photo of your ID.")
     elif text == "/location":
@@ -76,7 +63,7 @@ def handle_text(chat_id, text):
     elif text == "/menu":
         send_message(chat_id, "📋 Menu: [Cannabis, Hookah, Liquor]")
     else:
-        send_message(chat_id, "🤖 I didn’t understand that. Try /start, /id, /location, or /menu.")
+        send_message(chat_id, "🤖 I didn’t understand that. Try /start, /id, /location or /menu.")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
